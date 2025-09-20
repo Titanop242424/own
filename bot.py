@@ -4,9 +4,9 @@ import requests
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from telegram import Update
 
-TELEGRAM_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
-ADMIN_ID = 1600832237
-BOT_OWNER = "SOULCRACK"
+TELEGRAM_TOKEN = "7788865701:AAHFVFbSdhpRuMTmLj987J8BmwKLR3j4brk"
+ADMIN_ID = 7163028849
+BOT_OWNER = "TITANOP24"
 
 approved_users = {}
 
@@ -91,3 +91,4 @@ def main():
 if __name__ == "__main__":
     import asyncio
     main()
+
