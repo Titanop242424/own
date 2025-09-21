@@ -1,9 +1,5 @@
-name: soul
+name: Titan DDoS Attack
 on:
-  push:
-  pull_request:
-  schedule:
-    - cron: '*/30 * * * *'
   workflow_dispatch:
     inputs:
       ip:
